@@ -1,0 +1,285 @@
+---
+title: "Survey experimenty"
+author: "Michael Škvrňák"
+format: revealjs
+editor: visual
+bibliography: references.bib
+---
+
+## Experimenty
+
+> The observation of units after, and possibly before, a **randomly** assigned intervention in a **controlled** setting, which tests one or more precise causal expectations
+
+Survey experiment je experiment, který se odehrává v rámci dotazníku 🤷
+
+## Pár upozornění na začátek
+
+-   experimentování na lidech =\> zvážení etiky výzkumu [@teele2021]
+
+-   experimentální výzkum =\> preregistrace hypotéz, vytváření pre-analysis plánu (viz [OSF](https://help.osf.io/article/145-preregistration))
+
+## Historie
+
+První survey experiment byl question wording design (Hadley Cantril, 1940):
+
+| Kontrolní sk.                                                                          | Experimentální sk.                                                                                                         |
+|----------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| Myslíte si, že by USA měly dělat více než v současnosti, aby pomohly Anglii a Francii? | Myslíte si, že by USA měly dělat více než v současnosti, aby pomohly Anglii a Francii ***v jejich boji proti Hitlerovi***? |
+| Ano: 13 %                                                                              | Ano: 22 %                                                                                                                  |
+
+## Designy survey experimentů
+
+-   **simple design/two-conditions experiment**
+
+-   Sensitive item designs
+
+    -   **List experiment**
+
+    -   Randomized response
+
+    -   Endorsement experiments [@blairComparingCombiningList2014a]
+
+-   Factorial design
+
+-   **Conjoint experiment**
+
+## 
+
+![](figs/trumps.jpeg){fig-align="center"}
+
+## Two-conditions I
+
+George Mountford is 45 years old; he lives in the constituency and studied business at university. He is a solicitor and runs a busy local practice. \[...\]
+
+**John** (kontrolní sk.) / **Sarah** (experimentální sk.) Burns is 48 years old, and was born and brought up in your area, before going to university to study for a degree in physics. After university John/Sarah trained as an accountant, and set up a company ten years ago; it now employs seven people. \[...\]
+
+-   Which would you prefer as your MP: John/Neither/George.
+
+[@campbellWhatVotersWant2014]
+
+## Limit je vaše představivost
+
+> "In this experiment, we manipulated what men believed about their own penis size, relative to others. We gave them false information, stating that the average penis size was larger than it in fact is, reasoning that, on average, these males will feel that relatively and subjectively their own penis was smaller; compared to those told that the average penis size was smaller than true average. We then asked them to rate how much they would like to own a sports car." [@richardson2023]
+
+## Příklad 1
+
+skript `01_simple.R`
+
+```{r}
+library(dplyr)
+
+N <- 200
+DIFF <- 1
+
+set.seed(1234)
+
+# Vygeneruj kompletně fake data
+data <- tibble(
+  # Exp. skupina
+  skupina = rep(c(0, 1), times = N), 
+  # Hodnocení kandidáta
+  eval = rnorm(N * 2, 0, 2), 
+  gender = sample(c("man", "woman"), size = N * 2, 
+               replace = TRUE), 
+  age = floor(runif(N * 2, 18, 80))
+) %>% 
+  mutate(
+    eval = if_else(skupina == 1, eval + DIFF, eval) %>% 
+      round(., 0)
+  )
+
+head(data)
+```
+
+## 
+
+```{r, echo=TRUE}
+# Summary stats
+data %>% 
+  group_by(skupina) %>% 
+  summarise(across(where(is.numeric), ~mean(.x)), 
+            gender_men = mean(gender == "man"))
+
+```
+
+## 
+
+```{r, echo=TRUE}
+
+t.test(eval ~ skupina, data = data)
+
+```
+
+## 
+
+```{r, echo=TRUE}
+lm(eval ~ skupina + age + gender, data = data) %>% 
+  summary()
+
+```
+
+## List experimenty
+
+-   item-count technique - krátký seznam vs. dlouhý seznam se senzitivní otázkou
+
+-   person-count technique - X blízkých osob vs. X blízkých osob + respondent
+
+## Item count technique
+
+> Now I'm going to read you three/*four* things that sometimes make people angry or upset. After I read all three, just tell me HOW MANY of them upset you. (I don't want to know which ones, just how many.)
+>
+> 1.  the federal government increasing the tax on gasoline
+>
+> 2.  professional athletes getting million-dollar-plus salaries
+>
+> 3.  large corporations polluting the environment
+>
+> 4.  *black leaders asking the government for affirmative action.* (sensitive question)
+>
+> How many, if any, of these things upset you?
+
+## 
+
+```{r}
+library(list)
+data("affirm")
+
+head(affirm)
+
+
+```
+
+## 
+
+```{r}
+table(affirm$y, affirm$treat)
+
+library(ggplot2)
+
+affirm %>% 
+  count(treat, y) %>% 
+  group_by(treat) %>% 
+  mutate(share = n / sum(n)) %>% 
+  ggplot(., aes(x = y, y = share, fill = factor(treat))) + 
+  geom_bar(stat = "identity", position = "dodge") + 
+  theme_minimal()
+```
+
+## 
+
+```{r, echo=TRUE}
+affirm %>% 
+  group_by(treat) %>% 
+  summarise(mean_items = mean(y))
+
+```
+
+## 
+
+```{r}
+t.test(y ~ treat, data = affirm)
+```
+
+## Předpoklady
+
+-   no design effects
+
+-   no liars (ceiling and floor effects)
+
+[@blairStatisticalAnalysisList2012]
+
+```{r, echo=TRUE}
+
+ict.test(affirm$y, affirm$treat, J = 3)
+
+```
+
+## 
+
+```{r, echo=TRUE}
+mod0 <- ictreg(y ~ 1, data = affirm, treat = "treat", J = 3, method = "ml")
+summary(mod0)
+
+```
+
+## 
+
+```{r}
+mod1 <- ictreg(y ~ south + age + male + college, data = affirm, 
+               treat = "treat", J=3, method = "ml")
+
+summary(mod1)
+```
+
+```{r, eval=FALSE, include=FALSE}
+mod2 <- ictreg(y ~ age + college + male + south, treat = "treat", 
+	     	       J = 3, data = affirm, method = "ml", 
+               floor = TRUE,
+               floor.fit = "bayesglm",
+               floor.formula = ~ age + college + male + south,
+               ceiling = TRUE,
+               ceiling.fit = "bayesglm",
+               ceiling.formula = ~ age + college + male + south)
+
+summary(mod2, boundary.proportions = T)
+```
+
+## Conjoint experimenty
+
+| Atribut                         | Kandidát A                                                                                | Kandidát B                                                          |
+|---------------------------------|-------------------------------------------------------------------------------------------|---------------------------------------------------------------------|
+| Vojenská služba                 | Sloužil/a v námořnictvu                                                                   | Nesloužil/a v armádě                                                |
+| Postoj k občanství pro migranty | Občanství pro neautorizované migranty bez trestního záznamu, kteří přišli do US jako děti | Občanství pro všechny neautorizované migranty bez trestního záznamu |
+| Předchozí zaměstnání            | Právník                                                                                   | Právník                                                             |
+| Věk                             | 53                                                                                        | 45                                                                  |
+|                                 | ...                                                                                       | ...                                                                 |
+
+## Výhody
+
+-   testování několika atributů najednou
+
+-   snižuje social desirability bias (imperceptability & rationalization) [@druckmanAdvancesExperimentalPolitical2021]
+
+-   evidence externí validity [@hainmuellerAssessingExternalValidity2015]
+
+## Conjoint exp. 2
+
+-   AMCE - average marginal component effect
+
+## Příklad 2
+
+[@teeleTiesThatDouble2018]
+
+```{r}
+library(cregg)
+
+voters <- readRDS("data/voters.rds")
+
+cj1 <- cj(voters, winner ~ gender + experience + spouse + 
+     occupation + children + age, 
+     id = ~responseid)
+
+plot(cj1)
+```
+
+## 
+
+```{r, echo=TRUE, eval=FALSE}
+cj2 <- cj(voters, winner ~ gender + experience + spouse + occupation + children + age, 
+   by = ~respondent_party_id, 
+   id = ~responseid) 
+
+plot(cj2, group = "respondent_party_id")
+```
+
+## 
+
+```{r}
+cj(voters, winner ~ gender + experience + spouse + occupation + children + age, 
+   by = ~respondent_party_id, 
+   id = ~responseid) %>% 
+  plot(., group = "respondent_party_id")
+
+```
+
+## Zdroje
